@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#f4f6fb">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
+<title>30 Wörter täglich</title>
+</head>
+<body>
+<div class="app">
+<header>
+ <div><h1>30 Wörter täglich</h1><div class="muted small">Englisch · 365-Tage-Trainer</div></div>
+ <div class="badge" id="dayBadge">Tag 1</div>
+</header>
+
+<section id="todayView" class="view active">
+ <div class="panel">
+  <div class="row">
+   <div><div class="muted small">HEUTE</div><div class="big" id="todayTitle">Tag 1</div></div>
+   <div id="todayCount">30 Wörter</div>
+  </div>
+  <div class="progress"><div id="todayProgress"></div></div>
+  <p class="muted" id="todayInfo"></p>
+  <div class="row">
+   <button id="startToday">30 Wörter üben</button>
+   <button id="translateToday" class="secondary">Übersetzungen laden</button>
+  </div>
+ </div>
+
+ <div class="panel" id="reviewPanel">
+  <div class="row"><b>Wiederholung fällig</b><span id="reviewCount">0</span></div>
+  <p class="muted small">Wörter aus früheren Tagen nach 1–3–7–14–30-Tage-Prinzip.</p>
+  <button id="startReview" class="secondary">Wiederholung starten</button>
+ </div>
+
+ <div class="panel">
+  <div class="row"><b>Heutige Wörter</b><span class="muted small" id="knownToday">0/30 sicher</span></div>
+  <div class="word-grid" id="todayWords"></div>
+ </div>
+</section>
+
+<section id="practiceView" class="view">
+ <div class="row">
+  <div><b id="practiceTitle">Karteikarten</b><div class="muted small" id="practiceCounter"></div></div>
+  <button class="ghost" id="shuffleBtn">Mischen</button>
+ </div>
+ <div class="card-wrap">
+  <div class="flashcard" id="flashcard">
+   <div class="face front">
+    <div class="word" id="frontWord"></div>
+    <div class="hint">Tippen zum Umdrehen</div>
+   </div>
+   <div class="face back">
+    <div class="translation" id="backTranslation"></div>
+    <div class="example" id="backExample"></div>
+    <div class="hint">Tippen zum Zurückdrehen</div>
+   </div>
+  </div>
+ </div>
+ <div class="controls">
+  <button class="bad" id="againBtn">Nochmal</button>
+  <button class="good" id="knownBtn">Gewusst</button>
+ </div>
+</section>
+
+<section id="archiveView" class="view">
+ <div class="panel">
+  <b>Archiv</b>
+  <p class="muted small">Freigeschaltete Tage bleiben dauerhaft verfügbar. Zukünftige Tage bleiben bis zum jeweiligen Datum verborgen.</p>
+  <div id="archive"></div>
+ </div>
+</section>
+
+<section id="settingsView" class="view">
+ <div class="panel">
+  <b>Lernrichtung</b>
+  <p class="muted small">Du kannst die Karteikarten auch Deutsch → Englisch lernen.</p>
+  <select id="direction">
+   <option value="en-de">Englisch → Deutsch</option>
+   <option value="de-en">Deutsch → Englisch</option>
+   <option value="mixed">Gemischt</option>
+  </select>
+ </div>
+ <div class="panel">
+  <b>Daten sichern</b>
+  <p class="muted small">Exportiert Lernfortschritt und bereits geladene Übersetzungen.</p>
+  <button id="exportBtn">Backup exportieren</button>
+ </div>
+ <div class="panel">
+  <b>Backup importieren</b>
+  <p class="muted small">Stellt deinen lokalen Lernstand wieder her.</p>
+  <input type="file" id="importFile" accept=".json,application/json">
+ </div>
+ <div class="notice">
+  Alle 365 Tagespakete mit insgesamt 10.950 englischen Wörtern sind bereits enthalten.
+  Für Wörter ohne fest eingebaute Übersetzung wird die deutsche Bedeutung beim ersten Online-Aufruf automatisch geladen und lokal gespeichert.
+ </div>
+</section>
+</div>
+
+<nav><div class="inner">
+ <button data-view="todayView" class="active">Heute</button>
+ <button data-view="practiceView">Üben</button>
+ <button data-view="archiveView">Archiv</button>
+ <button data-view="settingsView">Daten</button>
+</div></nav>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
