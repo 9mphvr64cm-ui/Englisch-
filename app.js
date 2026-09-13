@@ -4,13 +4,14 @@ const START_DATE='2026-09-13';
 const REVIEW_STEPS=[1,3,7,14,30];
 const $=id=>document.getElementById(id);
 
-const defaultState={progress:{},translations:{},settings:{direction:'en-de'}};
+const defaultState={progress:{},translations:{},dictionary:{},settings:{direction:'en-de',englishLocale:'en-GB',speechRate:0.88}};
 let state;
 try{
   state=Object.assign({},defaultState,JSON.parse(localStorage.getItem(STORE_KEY)||'{}'));
   state.progress=state.progress||{};
   state.translations=state.translations||{};
-  state.settings=Object.assign({direction:'en-de'},state.settings||{});
+  state.dictionary=state.dictionary||{};
+  state.settings=Object.assign({direction:'en-de',englishLocale:'en-GB',speechRate:0.88},state.settings||{});
 }catch(e){state=structuredClone(defaultState)}
 
 function save(){localStorage.setItem(STORE_KEY,JSON.stringify(state))}
@@ -60,6 +61,196 @@ function dueItems(){
  return items;
 }
 function escapeHtml(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
+
+// Pronunciation uses the device's built-in Web Speech voices. No audio files are stored in the app.
+let speechVoices=[];
+function speechSupported(){return 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window}
+function refreshVoices(){if(speechSupported()) speechVoices=window.speechSynthesis.getVoices()||[]}
+function preferredVoice(lang){
+ refreshVoices();
+ const exact=speechVoices.filter(v=>(v.lang||'').toLowerCase()===lang.toLowerCase());
+ const base=lang.split('-')[0].toLowerCase();
+ const same=speechVoices.filter(v=>(v.lang||'').toLowerCase().split('-')[0]===base);
+ return exact.find(v=>v.localService)||exact[0]||same.find(v=>v.localService)||same[0]||null;
+}
+function cleanSpeechText(text){
+ return String(text||'').replace(/\s*\/\s*/g,', ').replace(/\s+/g,' ').trim();
+}
+function speakText(text,lang){
+ const spoken=cleanSpeechText(text);
+ if(!spoken)return;
+ if(!speechSupported()){
+   alert('Die Sprachausgabe wird von diesem Browser nicht unterstützt. Öffne die App auf dem iPhone am besten über Safari.');
+   return;
+ }
+ window.speechSynthesis.cancel();
+ const u=new SpeechSynthesisUtterance(spoken);
+ u.lang=lang;
+ u.rate=Number(state.settings.speechRate||0.88);
+ u.pitch=1;
+ const voice=preferredVoice(lang);
+ if(voice)u.voice=voice;
+ window.speechSynthesis.speak(u);
+}
+if(speechSupported()){
+ refreshVoices();
+ window.speechSynthesis.addEventListener?.('voiceschanged',refreshVoices);
+}
+
+
+function maskTargetInSentence(sentence,target){
+ const s=String(sentence||'');
+ const t=String(target||'').trim();
+ if(!s||!t)return s;
+ // Hide the exact target token, case-insensitively, so DE→EN hints do not reveal the answer.
+ const escaped=t.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+ const re=new RegExp('\\b'+escaped+'\\b','gi');
+ const masked=s.replace(re,'_____');
+ return masked===s ? s : masked;
+}
+function resetFrontExample(){
+ $('frontExampleWrap').classList.add('hidden');
+ $('showExample').textContent='💡 Beispielsatz';
+}
+async function revealFrontExample(){
+ if(!deck.length)return;
+ const item=deck[idx], w=item.word;
+ let sentence=cachedExampleForWord(w);
+
+ $('showExample').disabled=true;
+ if(!sentence){
+   $('showExample').textContent='Lade …';
+   const info=await dictionaryInfo(w[0]);
+   sentence=info.example||'';
+ }
+ $('showExample').disabled=false;
+
+ if(!sentence){
+   $('frontExample').textContent='Für dieses Wort ist aktuell kein Beispielsatz verfügbar.';
+   $('frontExampleWrap').classList.remove('hidden');
+   $('frontExampleSpeak').style.display='none';
+   $('showExample').textContent='Kein Satz verfügbar';
+   return;
+ }
+
+ const visible=item.dir==='de-en' ? maskTargetInSentence(sentence,w[0]) : sentence;
+ $('frontExample').textContent=visible;
+ $('frontExampleWrap').classList.remove('hidden');
+ $('showExample').textContent='Hinweis sichtbar';
+ $('frontExampleSpeak').style.display='inline-block';
+ $('frontExampleSpeak').dataset.text=sentence;
+ $('frontExampleSpeak').dataset.lang=state.settings.englishLocale||'en-GB';
+
+ // Also populate the back of the same card once the sentence has been retrieved.
+ $('backExample').textContent=sentence;
+ $('exampleSpeak').style.display='inline-block';
+ $('exampleSpeak').dataset.text=sentence;
+}
+
+
+const dictionaryInflight=new Map();
+
+function normalizeAudioUrl(url){
+ const u=String(url||'').trim();
+ if(!u)return '';
+ if(u.startsWith('//'))return 'https:'+u;
+ return u;
+}
+
+function pickDictionaryAudio(data,locale){
+ const entries=Array.isArray(data)?data:[];
+ const audios=[];
+ for(const entry of entries){
+   for(const p of (entry.phonetics||[])){
+     const u=normalizeAudioUrl(p.audio);
+     if(u)audios.push(u);
+   }
+ }
+ if(!audios.length)return '';
+ const wantUS=(locale||'').toLowerCase()==='en-us';
+ const markers=wantUS?['_us_','-us-','/us/']:['_gb_','-gb-','_uk_','/uk/'];
+ return audios.find(u=>markers.some(m=>u.toLowerCase().includes(m)))||audios[0];
+}
+
+function pickDictionaryExample(data){
+ const entries=Array.isArray(data)?data:[];
+ for(const entry of entries){
+   for(const meaning of (entry.meanings||[])){
+     for(const def of (meaning.definitions||[])){
+       if(def && typeof def.example==='string' && def.example.trim()){
+         return def.example.trim();
+       }
+     }
+   }
+ }
+ return '';
+}
+
+function pickDictionaryPhonetic(data){
+ const entries=Array.isArray(data)?data:[];
+ for(const entry of entries){
+   if(entry && typeof entry.phonetic==='string' && entry.phonetic.trim())return entry.phonetic.trim();
+   for(const p of (entry.phonetics||[])){
+     if(p && typeof p.text==='string' && p.text.trim())return p.text.trim();
+   }
+ }
+ return '';
+}
+
+async function dictionaryInfo(word){
+ const key=String(word||'').trim().toLowerCase();
+ if(!key)return {example:'',audioGB:'',audioUS:'',phonetic:''};
+ if(state.dictionary[key])return state.dictionary[key];
+ if(dictionaryInflight.has(key))return dictionaryInflight.get(key);
+
+ const promise=(async()=>{
+   try{
+     const url='https://api.dictionaryapi.dev/api/v2/entries/en/'+encodeURIComponent(key);
+     const r=await fetch(url,{method:'GET',mode:'cors'});
+     if(!r.ok)throw new Error('HTTP '+r.status);
+     const data=await r.json();
+     const info={
+       example:pickDictionaryExample(data),
+       audioGB:pickDictionaryAudio(data,'en-GB'),
+       audioUS:pickDictionaryAudio(data,'en-US'),
+       phonetic:pickDictionaryPhonetic(data)
+     };
+     state.dictionary[key]=info;
+     save();
+     return info;
+   }catch(e){
+     const info={example:'',audioGB:'',audioUS:'',phonetic:''};
+     state.dictionary[key]=info;
+     save();
+     return info;
+   }
+ })().finally(()=>dictionaryInflight.delete(key));
+
+ dictionaryInflight.set(key,promise);
+ return promise;
+}
+
+async function speakEnglishWord(word){
+ const locale=state.settings.englishLocale||'en-GB';
+ const info=await dictionaryInfo(word);
+ const audioUrl=locale==='en-US'?(info.audioUS||info.audioGB):(info.audioGB||info.audioUS);
+ if(audioUrl){
+   try{
+     window.speechSynthesis?.cancel();
+     const audio=new Audio(audioUrl);
+     audio.preload='auto';
+     await audio.play();
+     return;
+   }catch(e){}
+ }
+ speakText(word,locale);
+}
+
+function cachedExampleForWord(w){
+ if(w[2])return w[2];
+ const info=state.dictionary[String(w[0]||'').toLowerCase()];
+ return info?.example||'';
+}
 
 let deck=[],idx=0,currentMode='today';
 
@@ -114,15 +305,35 @@ function renderCard(){
  if(!item.dir)item.dir=directionForCard();
  const tr=translationOf(w);
  $('flashcard').classList.remove('flipped');
+ resetFrontExample();
+ const existingExample=cachedExampleForWord(w);
+ $('showExample').style.display='inline-block';
+ $('showExample').textContent=existingExample?'💡 Beispielsatz':'💡 Beispielsatz laden';
+ $('frontExampleSpeak').style.display=existingExample?'inline-block':'none';
+ $('frontExample').textContent='';
+ $('frontExampleSpeak').dataset.text=existingExample;
+ $('frontExampleSpeak').dataset.lang=state.settings.englishLocale||'en-GB';
 
  if(item.dir==='de-en'){
    $('frontWord').textContent=tr||'Übersetzung wird geladen …';
    $('backTranslation').textContent=w[0];
+   $('frontSpeakLabel').textContent='DE';
+   $('backSpeakLabel').textContent=(state.settings.englishLocale==='en-US'?'US':'UK');
  }else{
    $('frontWord').textContent=w[0];
    $('backTranslation').textContent=tr||'Übersetzung wird geladen …';
+   $('frontSpeakLabel').textContent=(state.settings.englishLocale==='en-US'?'US':'UK');
+   $('backSpeakLabel').textContent='DE';
  }
- $('backExample').textContent=w[2]||'';
+ $('frontSpeak').dataset.text=item.dir==='de-en'?(tr||''):w[0];
+ $('frontSpeak').dataset.lang=item.dir==='de-en'?'de-DE':state.settings.englishLocale;
+ $('backSpeak').dataset.text=item.dir==='de-en'?w[0]:(tr||'');
+ $('backSpeak').dataset.lang=item.dir==='de-en'?state.settings.englishLocale:'de-DE';
+ const backEx=cachedExampleForWord(w);
+ $('backExample').textContent=backEx||'';
+ $('exampleSpeak').style.display=backEx?'inline-block':'none';
+ $('exampleSpeak').dataset.text=backEx||'';
+ $('exampleSpeak').dataset.lang=state.settings.englishLocale;
  $('practiceCounter').textContent=`${idx+1} / ${deck.length}`;
  $('practiceTitle').textContent=currentMode==='review'?'Wiederholung':`${item.pack.title} · ${fmtDate(item.pack.date)}`;
 
@@ -130,8 +341,13 @@ function renderCard(){
    translateWord(w[0]).then(()=>{
      const fresh=translationOf(w);
      if(idx<deck.length && deck[idx]===item){
-       if(item.dir==='de-en') $('frontWord').textContent=fresh||'Keine Übersetzung verfügbar';
-       else $('backTranslation').textContent=fresh||'Keine Übersetzung verfügbar';
+       if(item.dir==='de-en'){
+         $('frontWord').textContent=fresh||'Keine Übersetzung verfügbar';
+         $('frontSpeak').dataset.text=fresh||'';
+       }else{
+         $('backTranslation').textContent=fresh||'Keine Übersetzung verfügbar';
+         $('backSpeak').dataset.text=fresh||'';
+       }
      }
      renderToday();
    });
@@ -214,12 +430,40 @@ $('startToday').onclick=()=>startPack(todayPack());
 $('startReview').onclick=startDue;
 $('translateToday').onclick=()=>preloadTranslations(todayPack());
 $('flashcard').onclick=()=>$('flashcard').classList.toggle('flipped');
+['frontSpeak','backSpeak'].forEach(id=>{
+ const btn=$(id);
+ btn.addEventListener('click',async e=>{
+   e.stopPropagation();
+   const lang=btn.dataset.lang||'en-GB';
+   const text=btn.dataset.text||'';
+   if(lang.toLowerCase().startsWith('en'))await speakEnglishWord(text);
+   else speakText(text,lang);
+ });
+});
+['exampleSpeak','frontExampleSpeak'].forEach(id=>{
+ const btn=$(id);
+ btn.addEventListener('click',e=>{
+   e.stopPropagation();
+   speakText(btn.dataset.text||'',btn.dataset.lang||'en-GB');
+ });
+});
+$('showExample').addEventListener('click',e=>{
+ e.stopPropagation();
+ revealFrontExample();
+});
 $('shuffleBtn').onclick=shuffleDeck;
 $('knownBtn').onclick=()=>{const x=deck[idx];setResult(x.pack,x.word,true);nextCard()};
 $('againBtn').onclick=()=>{const x=deck[idx];setResult(x.pack,x.word,false);nextCard()};
 
 $('direction').value=state.settings.direction||'en-de';
 $('direction').onchange=e=>{state.settings.direction=e.target.value;save()};
+$('englishLocale').value=state.settings.englishLocale||'en-GB';
+$('englishLocale').onchange=e=>{state.settings.englishLocale=e.target.value;save();if(deck.length)renderCard()};
+$('speechRate').value=String(state.settings.speechRate||0.88);
+$('speechRate').onchange=e=>{state.settings.speechRate=Number(e.target.value);save()};
+$('testEnglish').onclick=()=>speakText('Good morning. I am learning English every day.',state.settings.englishLocale||'en-GB');
+$('testGerman').onclick=()=>speakText('Guten Morgen. Ich lerne jeden Tag Englisch.','de-DE');
+$('speechSupportNote').textContent=speechSupported()?'Sprachausgabe ist auf diesem Gerät verfügbar.':'Sprachausgabe ist in diesem Browser nicht verfügbar.';
 
 $('exportBtn').onclick=()=>{
  const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'});
@@ -232,8 +476,9 @@ $('importFile').addEventListener('change',async e=>{
    const obj=JSON.parse(await f.text());
    state.progress=obj.progress||{};
    state.translations=obj.translations||{};
-   state.settings=Object.assign({direction:'en-de'},obj.settings||{});
-   save();$('direction').value=state.settings.direction;renderToday();renderArchive();
+   state.dictionary=obj.dictionary||{};
+   state.settings=Object.assign({direction:'en-de',englishLocale:'en-GB',speechRate:0.88},obj.settings||{});
+   save();$('direction').value=state.settings.direction;$('englishLocale').value=state.settings.englishLocale;$('speechRate').value=String(state.settings.speechRate);renderToday();renderArchive();
    alert('Backup importiert.');
  }catch(err){alert('Import fehlgeschlagen: '+err.message)}
 });

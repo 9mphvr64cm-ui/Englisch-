@@ -51,11 +51,21 @@
   <div class="flashcard" id="flashcard">
    <div class="face front">
     <div class="word" id="frontWord"></div>
+    <div class="front-tools">
+     <button class="speak-btn" id="frontSpeak" type="button" aria-label="Aussprache der Vorderseite abspielen">🔊 <span id="frontSpeakLabel">EN</span></button>
+     <button class="hint-btn" id="showExample" type="button">💡 Beispielsatz</button>
+    </div>
+    <div class="front-example hidden" id="frontExampleWrap">
+     <div class="example" id="frontExample"></div>
+     <button class="speak-btn sentence-btn" id="frontExampleSpeak" type="button" aria-label="Englischen Beispielsatz abspielen">🔊 Satz</button>
+    </div>
     <div class="hint">Tippen zum Umdrehen</div>
    </div>
    <div class="face back">
     <div class="translation" id="backTranslation"></div>
+    <button class="speak-btn" id="backSpeak" type="button" aria-label="Aussprache der Rückseite abspielen">🔊 <span id="backSpeakLabel">DE</span></button>
     <div class="example" id="backExample"></div>
+    <button class="speak-btn sentence-btn" id="exampleSpeak" type="button" aria-label="Englischen Beispielsatz abspielen">🔊 Satz</button>
     <div class="hint">Tippen zum Zurückdrehen</div>
    </div>
   </div>
@@ -83,6 +93,26 @@
    <option value="de-en">Deutsch → Englisch</option>
    <option value="mixed">Gemischt</option>
   </select>
+ </div>
+ <div class="panel">
+  <b>Aussprache</b>
+  <p class="muted small">Die App nutzt die Sprachstimmen deines iPhones. Auf jeder Karte kannst du Englisch und Deutsch separat anhören.</p>
+  <label class="setting-label" for="englishLocale">Englische Aussprache</label>
+  <select id="englishLocale">
+   <option value="en-GB">British English</option>
+   <option value="en-US">American English</option>
+  </select>
+  <label class="setting-label" for="speechRate">Sprechgeschwindigkeit</label>
+  <select id="speechRate">
+   <option value="0.72">Langsam</option>
+   <option value="0.88">Lerntempo</option>
+   <option value="1">Normal</option>
+  </select>
+  <div class="speech-test-row">
+   <button class="secondary" id="testEnglish" type="button">🔊 Englisch testen</button>
+   <button class="secondary" id="testGerman" type="button">🔊 Deutsch testen</button>
+  </div>
+  <p class="muted small" id="speechSupportNote"></p>
  </div>
  <div class="panel">
   <b>Daten sichern</b>
