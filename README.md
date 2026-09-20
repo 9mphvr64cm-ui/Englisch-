@@ -63,3 +63,19 @@ Die neuen Dateien einfach in dasselbe Repository hochladen und die alten Dateien
 - Beispielsätze werden nur auf Wunsch geladen und danach lokal im App-Speicher zwischengespeichert.
 - Bei Deutsch→Englisch wird das Zielwort im Hinweis ausgeblendet.
 - Für einzelne Wörter stellt das Wörterbuch möglicherweise keinen Beispielsatz oder keine Audioaufnahme bereit; dann greift die jeweilige Fallback-Logik.
+
+## Version 6 – robustere Offline-/Fallback-Logik
+- Englische Aussprache nutzt sofort die Systemstimme des iPhones und hängt nicht mehr vom Online-Wörterbuch ab.
+- Fehlgeschlagene Wörterbuchabfragen werden nicht mehr als leere Ergebnisse gespeichert.
+- Beispielsätze können nach einer Störung erneut geladen werden; falls vorhanden, wird eine englische Definition als Zwischenlösung gezeigt.
+- Übersetzungen werden mit Timeout und bis zu drei Versuchen geladen.
+- Tagesübersetzungen werden im Hintergrund nacheinander vorgeladen, um API-Drosselung zu vermeiden.
+- Tag 8–10 enthalten Übersetzungen und Beispielsätze direkt in der App.
+
+## Version 7 – Kommunikations- und Einsatzwortschatz
+- Tag 1–7 bleiben unverändert, damit bisheriger Lernfortschritt erhalten bleibt.
+- Ab Tag 8 wurde die Roh-Korpusliste ersetzt.
+- Priorität 1: häufiges internationales Alltags- und Kommunikationsenglisch (Gespräch, Reisen, Arbeit, Orientierung, Gesundheit, Technik, Problemlösung).
+- Priorität 2: ein kompakter Fachwortschatz für Polizei, internationale Spezialeinheiten und Militär.
+- Professionelle Begriffe sind Sprachvokabular; die App vermittelt keine taktischen Verfahren.
+- Flexionsformen werden möglichst auf Grundformen zusammengeführt; unnötige Eigennamen und stark literarische/medizinische Korpusartefakte wurden gefiltert.

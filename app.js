@@ -122,14 +122,23 @@ async function revealFrontExample(){
    $('showExample').textContent='Lade …';
    const info=await dictionaryInfo(w[0]);
    sentence=info.example||'';
+
+   if(!sentence && info.definition){
+     $('frontExample').textContent='Bedeutung auf Englisch: '+info.definition;
+     $('frontExampleWrap').classList.remove('hidden');
+     $('frontExampleSpeak').style.display='none';
+     $('showExample').textContent='💡 Erneut versuchen';
+     $('showExample').disabled=false;
+     return;
+   }
  }
  $('showExample').disabled=false;
 
  if(!sentence){
-   $('frontExample').textContent='Für dieses Wort ist aktuell kein Beispielsatz verfügbar.';
+   $('frontExample').textContent='Gerade kein Beispielsatz abrufbar. Tippe später erneut auf „Beispielsatz“.';
    $('frontExampleWrap').classList.remove('hidden');
    $('frontExampleSpeak').style.display='none';
-   $('showExample').textContent='Kein Satz verfügbar';
+   $('showExample').textContent='💡 Erneut versuchen';
    return;
  }
 
@@ -141,12 +150,10 @@ async function revealFrontExample(){
  $('frontExampleSpeak').dataset.text=sentence;
  $('frontExampleSpeak').dataset.lang=state.settings.englishLocale||'en-GB';
 
- // Also populate the back of the same card once the sentence has been retrieved.
  $('backExample').textContent=sentence;
  $('exampleSpeak').style.display='inline-block';
  $('exampleSpeak').dataset.text=sentence;
 }
-
 
 const dictionaryInflight=new Map();
 
@@ -199,53 +206,60 @@ function pickDictionaryPhonetic(data){
 
 async function dictionaryInfo(word){
  const key=String(word||'').trim().toLowerCase();
- if(!key)return {example:'',audioGB:'',audioUS:'',phonetic:''};
- if(state.dictionary[key])return state.dictionary[key];
+ if(!key)return {example:'',audioGB:'',audioUS:'',phonetic:'',definition:''};
+ const cached=state.dictionary[key];
+ if(cached && (cached.example || cached.audioGB || cached.audioUS || cached.phonetic || cached.definition))return cached;
  if(dictionaryInflight.has(key))return dictionaryInflight.get(key);
 
  const promise=(async()=>{
+   const controller=new AbortController();
+   const timer=setTimeout(()=>controller.abort(),4500);
    try{
      const url='https://api.dictionaryapi.dev/api/v2/entries/en/'+encodeURIComponent(key);
-     const r=await fetch(url,{method:'GET',mode:'cors'});
+     const r=await fetch(url,{method:'GET',mode:'cors',signal:controller.signal,cache:'no-store'});
      if(!r.ok)throw new Error('HTTP '+r.status);
      const data=await r.json();
+     let definition='';
+     for(const entry of (Array.isArray(data)?data:[])){
+       for(const meaning of (entry.meanings||[])){
+         for(const def of (meaning.definitions||[])){
+           if(def && typeof def.definition==='string' && def.definition.trim()){
+             definition=def.definition.trim(); break;
+           }
+         }
+         if(definition)break;
+       }
+       if(definition)break;
+     }
      const info={
        example:pickDictionaryExample(data),
        audioGB:pickDictionaryAudio(data,'en-GB'),
        audioUS:pickDictionaryAudio(data,'en-US'),
-       phonetic:pickDictionaryPhonetic(data)
+       phonetic:pickDictionaryPhonetic(data),
+       definition
      };
-     state.dictionary[key]=info;
-     save();
+     // Only useful responses are cached. A temporary outage must never poison the cache.
+     if(info.example || info.audioGB || info.audioUS || info.phonetic || info.definition){
+       state.dictionary[key]=info;
+       save();
+     }
      return info;
    }catch(e){
-     const info={example:'',audioGB:'',audioUS:'',phonetic:''};
-     state.dictionary[key]=info;
-     save();
-     return info;
+     return {example:'',audioGB:'',audioUS:'',phonetic:'',definition:''};
+   }finally{
+     clearTimeout(timer);
    }
  })().finally(()=>dictionaryInflight.delete(key));
 
  dictionaryInflight.set(key,promise);
  return promise;
 }
-
 async function speakEnglishWord(word){
+ // Always use the iPhone/browser voice immediately.
+ // This keeps pronunciation working even when the dictionary service is offline.
  const locale=state.settings.englishLocale||'en-GB';
- const info=await dictionaryInfo(word);
- const audioUrl=locale==='en-US'?(info.audioUS||info.audioGB):(info.audioGB||info.audioUS);
- if(audioUrl){
-   try{
-     window.speechSynthesis?.cancel();
-     const audio=new Audio(audioUrl);
-     audio.preload='auto';
-     await audio.play();
-     return;
-   }catch(e){}
- }
  speakText(word,locale);
 }
-
 function cachedExampleForWord(w){
  if(w[2])return w[2];
  const info=state.dictionary[String(w[0]||'').toLowerCase()];
@@ -273,7 +287,8 @@ function renderToday(){
  $('todayWords').innerHTML=pack.words.map(w=>{
    const tr=translationOf(w);
    return `<div class="word-chip"><b>${escapeHtml(w[0])}</b>
-     <div class="translation-mini">${tr?escapeHtml(tr):'Übersetzung noch nicht geladen'}</div></div>`;
+     <div class="translation-mini">${tr?escapeHtml(tr):'Übersetzung noch nicht geladen'}</div>
+     <div class="translation-mini">${escapeHtml(w[3]||'Alltag & Kommunikation')}</div></div>`;
  }).join('');
 }
 
@@ -336,16 +351,20 @@ function renderCard(){
  $('exampleSpeak').dataset.lang=state.settings.englishLocale;
  $('practiceCounter').textContent=`${idx+1} / ${deck.length}`;
  $('practiceTitle').textContent=currentMode==='review'?'Wiederholung':`${item.pack.title} · ${fmtDate(item.pack.date)}`;
+ const cat=w[3]||'Alltag & Kommunikation';
+ $('frontCategory').textContent=cat; $('backCategory').textContent=cat;
+ $('frontCategory').classList.toggle('prof',cat==='Polizei & Militär');
+ $('backCategory').classList.toggle('prof',cat==='Polizei & Militär');
 
  if(!tr){
    translateWord(w[0]).then(()=>{
      const fresh=translationOf(w);
      if(idx<deck.length && deck[idx]===item){
        if(item.dir==='de-en'){
-         $('frontWord').textContent=fresh||'Keine Übersetzung verfügbar';
+         $('frontWord').textContent=fresh||'Übersetzung erneut laden';
          $('frontSpeak').dataset.text=fresh||'';
        }else{
-         $('backTranslation').textContent=fresh||'Keine Übersetzung verfügbar';
+         $('backTranslation').textContent=fresh||'Übersetzung erneut laden';
          $('backSpeak').dataset.text=fresh||'';
        }
      }
@@ -371,24 +390,43 @@ function shuffleDeck(){
 // Free translation API; cached locally after first successful request.
 const inflight=new Map();
 async function translateWord(word){
- const key=word.toLowerCase();
+ const key=String(word||'').trim().toLowerCase();
+ if(!key)return '';
  if(state.translations[key]) return state.translations[key];
  if(inflight.has(key)) return inflight.get(key);
+
  const promise=(async()=>{
-   try{
-     const u='https://api.mymemory.translated.net/get?q='+encodeURIComponent(word)+'&langpair=en%7Cde';
-     const r=await fetch(u,{method:'GET',mode:'cors'});
-     if(!r.ok) throw new Error('HTTP '+r.status);
-     const j=await r.json();
-     const tr=(j?.responseData?.translatedText||'').trim();
-     if(tr && tr.toLowerCase()!==word.toLowerCase()){
-       state.translations[key]=tr;
-       save();
-       return tr;
+   for(let attempt=0;attempt<3;attempt++){
+     const controller=new AbortController();
+     const timer=setTimeout(()=>controller.abort(),5000);
+     try{
+       const u='https://api.mymemory.translated.net/get?q='+encodeURIComponent(word)+'&langpair=en%7Cde';
+       const r=await fetch(u,{method:'GET',mode:'cors',signal:controller.signal,cache:'no-store'});
+       if(!r.ok) throw new Error('HTTP '+r.status);
+       const j=await r.json();
+
+       const candidates=[];
+       const direct=(j?.responseData?.translatedText||'').trim();
+       if(direct)candidates.push(direct);
+       for(const m of (j?.matches||[])){
+         if(typeof m?.translation==='string' && m.translation.trim())candidates.push(m.translation.trim());
+       }
+       const tr=candidates.find(x=>x && x.toLowerCase()!==key && !/MYMEMORY WARNING/i.test(x));
+       if(tr){
+         state.translations[key]=tr;
+         save();
+         return tr;
+       }
+     }catch(e){
+       // retry below
+     }finally{
+       clearTimeout(timer);
      }
-   }catch(e){}
+     await new Promise(r=>setTimeout(r,350*(attempt+1)));
+   }
    return '';
  })().finally(()=>inflight.delete(key));
+
  inflight.set(key,promise);
  return promise;
 }
@@ -397,20 +435,22 @@ async function preloadTranslations(pack){
  if(!todo.length){alert('Für diesen Tag sind bereits alle Übersetzungen gespeichert.');return}
  $('translateToday').disabled=true;
  $('translateToday').textContent='Lade …';
- let cursor=0;
- async function worker(){
-   while(cursor<todo.length){
-     const i=cursor++;
-     await translateWord(todo[i][0]);
-     await new Promise(r=>setTimeout(r,120));
-   }
+
+ let loaded=0;
+ for(const w of todo){
+   const result=await translateWord(w[0]);
+   if(result)loaded++;
+   renderToday();
+   await new Promise(r=>setTimeout(r,180));
  }
- await Promise.all([worker(),worker(),worker()]);
+
  $('translateToday').disabled=false;
  $('translateToday').textContent='Übersetzungen laden';
  renderToday();
- const left=todo.filter(w=>!translationOf(w)).length;
- alert(left?`${todo.length-left} Übersetzungen geladen; ${left} konnten gerade nicht geladen werden.`:'Alle 30 Übersetzungen sind jetzt lokal gespeichert.');
+ const left=todo.length-loaded;
+ alert(left
+   ? `${loaded} Übersetzungen geladen. ${left} konnten gerade nicht geladen werden – sie werden beim Öffnen der Karte erneut versucht.`
+   : 'Alle Übersetzungen sind jetzt lokal gespeichert.');
 }
 
 function renderArchive(){
@@ -484,6 +524,20 @@ $('importFile').addEventListener('change',async e=>{
 });
 
 renderToday();renderArchive();
+
+// Quietly prefetch missing translations for today's 30 words, one at a time.
+// This reduces the chance that a card is opened before its German meaning is ready.
+(async()=>{
+ const pack=todayPack();
+ if(!pack)return;
+ for(const w of pack.words){
+   if(!translationOf(w)){
+     await translateWord(w[0]);
+     renderToday();
+     await new Promise(r=>setTimeout(r,220));
+   }
+ }
+})();
 
 if('serviceWorker'in navigator){
  navigator.serviceWorker.register('sw.js').catch(()=>{});
